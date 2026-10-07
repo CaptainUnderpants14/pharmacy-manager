@@ -1,0 +1,715 @@
+PHARMACY MANAGEMENT SYSTEM - REACT NATIVE FRONTEND HANDOFF
+===========================================================
+
+Purpose
+-------
+Build a React Native mobile client for the Spring Boot backend in this folder.
+This document is the API contract for the backend as it currently exists. Do
+not assume endpoints that are not listed below exist. In particular, sales/POS,
+supplier payments, purchase invoices, user administration, role editing, and
+complete manufacturer/category CRUD are NOT implemented yet.
+
+
+1. BACKEND CONNECTION
+---------------------
+
+Technology: Spring Boot 3, PostgreSQL, Flyway, Spring Security, JWT.
+Default server port: 8080.
+All API paths begin with /api.
+Swagger, while the backend is running: http://<host>:8080/swagger-ui.html
+
+React Native base URL examples:
+  - Android emulator: http://10.0.2.2:8080
+  - iOS simulator:     http://localhost:8080
+  - Physical device:   http://<computer-LAN-IP>:8080
+
+Recommended frontend environment variable:
+  EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:8080
+
+All requests and responses are JSON. Send this for request bodies:
+  Content-Type: application/json
+
+Protected endpoints require:
+  Authorization: Bearer <JWT_TOKEN>
+
+The API does not use cookies or server-side sessions. Store the token in secure
+storage (Expo SecureStore or react-native-keychain), NOT ordinary AsyncStorage.
+
+
+2. AUTHENTICATION AND APP STARTUP
+---------------------------------
+
+Public endpoints:
+  POST /api/auth/login
+  POST /api/auth/logout
+
+Protected endpoint:
+  GET /api/auth/me
+
+LOGIN
+-----
+POST /api/auth/login
+
+Request:
+{
+  "username": "admin",
+  "password": "your-password"
+}
+
+Success response (HTTP 200):
+{
+  "token": "eyJ...",
+  "tokenType": "Bearer",
+  "expiresIn": 86400,
+  "user": {
+    "id": "uuid",
+    "username": "admin",
+    "employeeId": null,
+    "roles": ["OWNER"]
+  }
+}
+
+Notes:
+  - username may also be the user's email.
+  - tokenType is always "Bearer".
+  - expiresIn is seconds, not milliseconds. Calculate expiry as
+    Date.now() + expiresIn * 1000.
+  - employeeId is currently always null.
+  - Bad credentials result in HTTP 401. Do not reveal whether the user exists.
+
+ME
+--
+GET /api/auth/me
+Returns the same user object as login. Use it when restoring a persisted token
+to verify the session. If it returns 401, delete local credentials and return
+to Login.
+
+LOGOUT
+------
+POST /api/auth/logout
+Returns HTTP 204. JWT logout is presently client-side: clear the secure token,
+stored expiry, and cached user. Calling the endpoint is optional but sensible.
+
+Recommended bootstrap algorithm:
+  1. Read token + expiresAt from secure storage.
+  2. If missing or expired: show Auth stack.
+  3. Otherwise call GET /api/auth/me.
+  4. On 200, save user and show the App stack.
+  5. On 401, clear storage and show Login.
+  6. Globally, any 401 from the API should clear the token and redirect to Login.
+
+
+3. AUTHORIZATION / UI GATING
+----------------------------
+
+The backend authorizes by permission (authority), not merely by role. Login and
+/me return roles but DO NOT return the permission list. The initial OWNER role
+has every initial permission. Until a permissions endpoint is added, use roles
+only to make a best-effort UI choice; the backend remains the source of truth.
+
+Initial roles:
+  OWNER, ADMIN, PHARMACIST, CASHIER, INVENTORY_MANAGER, ACCOUNTANT, STAFF
+
+Permissions used by implemented endpoints:
+  DASHBOARD_VIEW
+  EMPLOYEE_VIEW, EMPLOYEE_CREATE, EMPLOYEE_UPDATE, EMPLOYEE_DELETE
+  MEDICINE_VIEW, MEDICINE_CREATE, MEDICINE_UPDATE, MEDICINE_DELETE
+  SUPPLIER_VIEW, SUPPLIER_CREATE, SUPPLIER_UPDATE
+  STOCK_VIEW, STOCK_ADJUST
+  PURCHASE_VIEW, PURCHASE_CREATE, PURCHASE_APPROVE,
+  PURCHASE_CANCEL, PURCHASE_RECEIVE
+  AUDIT_LOG_VIEW
+
+Suggested practical UI behavior:
+  - Owner/Admin: expose all implemented screens/actions.
+  - Others: show only screens appropriate to the product role, but always
+    gracefully handle HTTP 403 by showing "You do not have permission".
+  - Do not rely on role names for security. Never hide a server error or assume
+    a hidden action cannot be attempted.
+
+
+4. SHARED RESPONSE / ERROR SHAPES
+---------------------------------
+
+PAGINATED LIST RESPONSE
+-----------------------
+List endpoints that paginate use exactly this shape:
+{
+  "content": [ ... ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 42,
+  "totalPages": 3
+}
+
+Pass page, size, and sort as query parameters. Examples:
+  ?page=0&size=20
+  ?page=0&size=20&sort=name,asc
+  ?page=0&size=20&sort=orderDate,desc
+
+ERROR RESPONSE
+--------------
+Handled API errors have this shape:
+{
+  "timestamp": "2026-10-07T...Z",
+  "status": 400,
+  "error": "VALIDATION_ERROR",
+  "message": "Invalid request",
+  "path": "/api/medicines",
+  "errors": {
+    "name": "must not be blank"
+  }
+}
+
+Important status handling:
+  400: validation error; bind errors[field] to the matching form field.
+  401: missing/invalid/expired JWT; clear auth and show Login.
+  403: authenticated but unauthorized; show a permission message.
+  404: requested UUID does not exist.
+  409: business rule / duplicate / conflict. Show the message.
+  5xx: show a generic retryable error; do not show raw server details.
+
+All IDs are UUID strings. Monetary and inventory decimal values are JSON
+numbers. For currency UI, format with Intl.NumberFormat; avoid float arithmetic
+for totals when possible. Dates are ISO dates in YYYY-MM-DD format.
+
+
+5. ENUMS
+--------
+
+RecordStatus: ACTIVE | INACTIVE
+EmployeeStatus: ACTIVE | INACTIVE | ON_LEAVE | TERMINATED
+DosageForm:
+  TABLET | CAPSULE | SYRUP | INJECTION | CREAM | OINTMENT | DROPS |
+  POWDER | SUSPENSION | OTHER
+MovementType:
+  PURCHASE | SALE | SALE_RETURN | PURCHASE_RETURN | ADJUSTMENT_IN |
+  ADJUSTMENT_OUT | DAMAGE | EXPIRED | TRANSFER
+  NOTE: only ADJUSTMENT_IN and ADJUSTMENT_OUT are accepted by the manual
+  stock-adjustment endpoint.
+PurchaseOrderStatus:
+  DRAFT | PENDING_APPROVAL | APPROVED | ORDERED |
+  PARTIALLY_RECEIVED | RECEIVED | CANCELLED
+
+For readable labels, replace underscores with spaces and title-case them.
+
+
+6. DASHBOARD API
+----------------
+
+GET /api/dashboard
+Permission: DASHBOARD_VIEW
+
+Response:
+{
+  "totalMedicines": 125,
+  "activeMedicines": 118,
+  "lowStockMedicines": 0,
+  "expiringMedicines": 4,
+  "expiredMedicines": 1,
+  "totalEmployees": 12,
+  "activeEmployees": 10,
+  "totalSuppliers": 45,
+  "pendingPurchaseOrders": 8
+}
+
+Current backend limitation: lowStockMedicines is presently returned as 0 even
+when low-stock IDs exist. Build the low-stock card defensively, but use
+GET /api/inventory/low-stock for a real list/count.
+
+Suggested dashboard cards: active medicines, expiring batches, expired batches,
+employee count, supplier count, and pending purchase orders. Pull to refresh.
+
+
+7. EMPLOYEE API
+---------------
+
+GET /api/employees
+Permission: EMPLOYEE_VIEW
+Query parameters:
+  page (default 0), size (default 20), sort (default firstName)
+  search: matches firstName, lastName, or employeeCode
+  status: EmployeeStatus
+
+Response content item:
+{
+  "id": "uuid",
+  "employeeCode": "EMP-001",
+  "firstName": "Rahul",
+  "lastName": "Sharma",
+  "phone": "9876543210",
+  "designation": "Pharmacist",
+  "status": "ACTIVE"
+}
+
+GET /api/employees/{id}
+Permission: EMPLOYEE_VIEW
+Returns the same employee view object above.
+
+POST /api/employees
+Permission: EMPLOYEE_CREATE
+PUT /api/employees/{id}
+Permission: EMPLOYEE_UPDATE
+Both use this request body:
+{
+  "employeeCode": "EMP-001",
+  "firstName": "Rahul",
+  "lastName": "Sharma",
+  "phone": "9876543210",
+  "email": "rahul@example.com",
+  "address": "Address",
+  "designation": "Pharmacist",
+  "joiningDate": "2026-10-07",
+  "salary": 30000,
+  "status": "ACTIVE",
+  "branch": "Main"
+}
+Required: employeeCode, firstName, lastName.
+email must be valid when supplied. salary must be >= 0 when supplied.
+employeeCode is unique on creation.
+
+PATCH /api/employees/{id}/status?status=INACTIVE
+Permission: EMPLOYEE_UPDATE
+Returns the employee view. Do not send a JSON body.
+
+DELETE /api/employees/{id}
+Permission: EMPLOYEE_DELETE
+Returns 200 with no body. This is a soft delete: the backend changes status to
+INACTIVE. Prefer a confirmation dialog and label this UI action "Deactivate".
+
+
+8. CATEGORY AND MANUFACTURER API
+--------------------------------
+
+CATEGORY
+--------
+GET /api/categories
+Permission: MEDICINE_VIEW
+Returns an array, not a paginated object:
+[
+  { "id": "uuid", "name": "Analgesic", "description": "...", "active": true }
+]
+
+POST /api/categories
+Permission: MEDICINE_CREATE
+PUT /api/categories/{id}
+Permission: MEDICINE_UPDATE
+Body:
+{ "name": "Analgesic", "description": "Pain relief medicines" }
+name is required. There is currently no category delete endpoint.
+
+MANUFACTURER
+------------
+GET /api/manufacturers
+Permission: MEDICINE_VIEW
+Returns an array of entities. Use at least these fields:
+{
+  "id": "uuid",
+  "name": "Acme Pharma",
+  "contactPerson": "Name",
+  "phone": "...",
+  "email": "...",
+  "address": "...",
+  "gstin": "...",
+  "active": true,
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+
+POST /api/manufacturers
+Permission: MEDICINE_CREATE
+Body:
+{
+  "name": "Acme Pharma",
+  "contactPerson": "Name",
+  "phone": "...",
+  "email": "...",
+  "address": "...",
+  "gstin": "..."
+}
+name is required. There are currently no get-one, update, or delete
+manufacturer endpoints. Build a picker/create flow, not a full manufacturer
+management screen, unless the backend is extended.
+
+
+9. MEDICINE API
+---------------
+
+GET /api/medicines
+Permission: MEDICINE_VIEW
+Query parameters:
+  page, size, sort (default name)
+  search: searches name, genericName, brandName, medicineCode
+  status: ACTIVE or INACTIVE
+  categoryId: UUID
+
+Content item / get-one response:
+{
+  "id": "uuid",
+  "medicineCode": "PARA-500",
+  "name": "Paracetamol 500mg",
+  "genericName": "Paracetamol",
+  "brandName": "Crocin",
+  "category": "Analgesic",
+  "manufacturer": "Acme Pharma",
+  "status": "ACTIVE",
+  "reorderLevel": 20
+}
+
+GET /api/medicines/{id}
+Permission: MEDICINE_VIEW
+
+POST /api/medicines
+Permission: MEDICINE_CREATE
+PUT /api/medicines/{id}
+Permission: MEDICINE_UPDATE
+Request body for both:
+{
+  "medicineCode": "PARA-500",
+  "name": "Paracetamol 500mg",
+  "genericName": "Paracetamol",
+  "brandName": "Crocin",
+  "manufacturerId": "uuid-or-null",
+  "categoryId": "uuid-or-null",
+  "dosageForm": "TABLET",
+  "strength": "500 mg",
+  "packSize": "10 x 10",
+  "unit": "TABLET",
+  "prescriptionRequired": false,
+  "taxPercentage": 5,
+  "reorderLevel": 20,
+  "description": "Optional text",
+  "status": "ACTIVE"
+}
+Required: medicineCode (max 60 characters), name.
+taxPercentage and reorderLevel must be >= 0 if sent. Omit/null defaults them to
+zero. manufacturerId/categoryId can be null; non-null IDs must exist.
+
+DELETE /api/medicines/{id}
+Permission: MEDICINE_DELETE
+Returns 200 with no body. This soft-deactivates the medicine (status INACTIVE).
+
+Important UI limitation: the GET medicine response deliberately returns the
+category and manufacturer names, not their IDs. For an Edit Medicine form,
+first load categories/manufacturers and match by name, or extend the backend to
+include categoryId/manufacturerId before relying on an exact edit prefill.
+
+
+10. SUPPLIER API
+----------------
+
+GET /api/suppliers
+Permission: SUPPLIER_VIEW
+Query parameters:
+  page, size, sort (default companyName), search
+search matches companyName, supplierCode, or phone.
+
+Content item / get-one response:
+{
+  "id": "uuid",
+  "supplierCode": "SUP-001",
+  "companyName": "Supplier Co",
+  "phone": "9876543210",
+  "status": "ACTIVE"
+}
+
+POST /api/suppliers
+Permission: SUPPLIER_CREATE
+PUT /api/suppliers/{id}
+Permission: SUPPLIER_UPDATE
+Body:
+{
+  "supplierCode": "SUP-001",
+  "companyName": "Supplier Co",
+  "contactPerson": "Contact Name",
+  "phone": "9876543210",
+  "email": "supplier@example.com",
+  "address": "Address",
+  "gstin": "GSTIN",
+  "paymentTerms": "30 days",
+  "status": "ACTIVE"
+}
+Required: supplierCode, companyName. supplierCode is unique on creation.
+
+DELETE /api/suppliers/{id}
+Permission: SUPPLIER_UPDATE
+Returns 200 with no body and soft-deactivates the supplier.
+
+Like medicines, supplier list/get responses are intentionally summary objects;
+they do not return contactPerson, email, address, GSTIN, or paymentTerms. An
+edit form cannot perfectly prefill those fields from the current API. Keep its
+local state from creation/list flow or request a backend detail DTO enhancement.
+
+
+11. INVENTORY API
+-----------------
+
+POST /api/inventory/adjust
+Permission: STOCK_ADJUST
+Body:
+{
+  "batchId": "uuid",
+  "quantity": 10,
+  "type": "ADJUSTMENT_IN",
+  "reason": "Physical stock count"
+}
+Rules:
+  - quantity must be > 0.
+  - type must be ADJUSTMENT_IN or ADJUSTMENT_OUT.
+  - ADJUSTMENT_OUT cannot take stock below zero (HTTP 409).
+  - Each successful adjustment creates a stock-movement and audit record.
+
+Response:
+{
+  "id": "batch-uuid",
+  "medicineId": "medicine-uuid",
+  "batchNumber": "P001",
+  "expiryDate": "2027-01-31",
+  "quantity": 110
+}
+
+GET /api/inventory/expired
+Permission: STOCK_VIEW
+Returns BatchView[] (same shape as adjustment response). Expired means expiry
+date before today.
+
+GET /api/inventory/expiring?days=30
+Permission: STOCK_VIEW
+days defaults to 30 and must be >= 1. Returns BatchView[].
+
+GET /api/inventory/low-stock
+Permission: STOCK_VIEW
+Returns a simple array of medicine UUIDs, e.g. ["uuid", "uuid"]. It does NOT
+return medicine display details. Fetch/filter the medicine list separately for
+names if needed.
+
+GET /api/inventory/summary
+Permission: STOCK_VIEW
+Response: { "lowStock": 2, "expiring": 4, "expired": 1 }
+
+GET /api/inventory/fefo/{medicineId}
+Permission: STOCK_VIEW
+Returns eligible BatchView[] sorted by expiry date ascending (First Expiry,
+First Out). Expired and unavailable/reserved batches are excluded. Use this
+read-only endpoint for a "batches to dispense first" display; there is no sales
+module yet.
+
+There is no general batch list or manual batch-creation endpoint. Batches are
+created through purchase receiving only.
+
+
+12. PURCHASE ORDER API
+----------------------
+
+GET /api/purchases
+Permission: PURCHASE_VIEW
+Query parameters: page, size, sort. Default sort is orderDate,DESC.
+Response is paginated. Content item / get-one response:
+{
+  "id": "uuid",
+  "number": "PO-2026-001",
+  "supplierId": "uuid",
+  "status": "DRAFT",
+  "total": 1234.50
+}
+
+GET /api/purchases/{id}
+Permission: PURCHASE_VIEW
+IMPORTANT: this currently returns the same summary only. It does NOT return
+notes, dates, or purchase line items. Do not build a detail edit screen that
+expects those values without extending the API.
+
+POST /api/purchases
+Permission: PURCHASE_CREATE
+Body:
+{
+  "purchaseOrderNumber": "PO-2026-001",
+  "supplierId": "supplier-uuid",
+  "orderDate": "2026-10-07",
+  "expectedDeliveryDate": "2026-10-12",
+  "notes": "Optional note",
+  "items": [
+    {
+      "medicineId": "medicine-uuid",
+      "quantity": 100,
+      "unitPrice": 12.50,
+      "discount": 5,
+      "tax": 60
+    }
+  ]
+}
+Required: purchaseOrderNumber, supplierId, orderDate, at least one item.
+Each item requires medicineId, quantity > 0, unitPrice >= 0. discount/tax are
+optional and must be >= 0 if provided.
+
+The server calculates an item total as:
+  unitPrice * quantity - discount + tax
+and the order total as:
+  subtotal + totalTax - totalDiscount
+
+Creating an order does NOT alter stock. Its starting status is DRAFT.
+
+POST /api/purchases/{id}/approve
+Permission: PURCHASE_APPROVE
+No body. Valid only from DRAFT or PENDING_APPROVAL. Returns purchase summary
+with status APPROVED.
+
+POST /api/purchases/{id}/cancel
+Permission: PURCHASE_CANCEL
+No body. A RECEIVED order cannot be cancelled. Returns purchase summary.
+
+POST /api/purchases/{id}/receive
+Permission: PURCHASE_RECEIVE
+Allowed only when status is APPROVED, ORDERED, or PARTIALLY_RECEIVED.
+Body:
+{
+  "items": [
+    {
+      "medicineId": "medicine-uuid",
+      "batchNumber": "P001",
+      "manufacturingDate": "2026-01-01",
+      "expiryDate": "2027-01-31",
+      "quantity": 100,
+      "purchasePrice": 12.50,
+      "mrp": 20.00,
+      "sellingPrice": 18.00
+    }
+  ]
+}
+Required per item: medicineId, batchNumber, expiryDate, quantity > 0,
+purchasePrice >= 0, mrp >= 0, sellingPrice >= 0.
+manufacturingDate is optional; if sent, expiryDate must be later than it.
+
+Receiving is an atomic operation: it creates a medicine batch, increases that
+batch's quantity, creates a PURCHASE stock movement, writes an audit log, and
+marks the order RECEIVED. If any part fails, the database transaction rolls
+back. Batch number must be unique for the same medicine; duplicate conflicts
+will return 409.
+
+Current limitation: receiving marks the whole order RECEIVED even if only some
+expected quantities are received. Do not present partial-receipt behavior until
+the backend is enhanced.
+
+
+13. AUDIT LOG API
+-----------------
+
+GET /api/audit-logs
+Permission: AUDIT_LOG_VIEW
+Query parameters: page, size, sort. Default: size=20, sort=createdAt,DESC.
+Returns a paginated array of audit entities. Useful fields include:
+  id, action, entityType, entityId, oldValue, newValue, ipAddress,
+  createdAt, updatedAt
+
+The related user may be absent/null for actions not tied to an authenticated
+account. Build the audit screen as read-only and handle nullable values.
+
+
+14. RECOMMENDED SCREEN / NAVIGATION PLAN
+----------------------------------------
+
+Auth stack:
+  LoginScreen
+
+Authenticated tab or drawer:
+  DashboardScreen
+  MedicinesStack
+    MedicineListScreen -> MedicineDetailsScreen -> MedicineFormScreen
+    Category picker/create modal
+    Manufacturer picker/create modal
+  InventoryStack
+    InventoryAlertsScreen (low, expiring, expired tabs)
+    BatchAdjustmentScreen
+    FefoBatchesScreen
+  PurchasesStack
+    PurchaseListScreen -> PurchaseSummaryScreen
+    PurchaseCreateScreen -> PurchaseApprove/Receive flows
+  SuppliersStack
+    SupplierListScreen -> SupplierFormScreen
+  EmployeesStack
+    EmployeeListScreen -> EmployeeFormScreen
+  AuditLogScreen (permission gated)
+  Profile/Logout
+
+Implementation recommendations:
+  - Use React Query / TanStack Query for server state, caching and invalidation.
+  - Invalidate medicine lists after a medicine create/update/deactivate.
+  - Invalidate inventory summary, low-stock, expiring, expired, FEFO, and
+    purchase lists after receive or stock adjustment.
+  - Invalidate employee/supplier lists after mutation.
+  - Disable submit buttons while mutation is pending. Prevent duplicate POSTs.
+  - Use pull-to-refresh and paginated/infinite lists for server list endpoints.
+  - Do not calculate or alter stock client-side. Trust backend responses.
+  - Show backend validation errors close to their respective form field.
+
+
+15. SUGGESTED TYPESCRIPT API LAYER
+----------------------------------
+
+Use a single fetch wrapper. Sketch:
+
+type ApiError = {
+  timestamp?: string;
+  status: number;
+  error?: string;
+  message?: string;
+  path?: string;
+  errors?: Record<string, string>;
+};
+
+type PageResponse<T> = {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+};
+
+async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = await secureStorage.getItemAsync("accessToken");
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init.headers,
+    },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ status: response.status }));
+    throw { status: response.status, ...error } as ApiError;
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}
+
+For an HTTP 401, the wrapper/interceptor should cause an auth-store reset once
+and navigate to Login. Avoid a redirect loop when the failing route is login.
+
+
+16. IMPORTANT CURRENT BACKEND LIMITATIONS (DO NOT HIDE THESE)
+-------------------------------------------------------------
+
+This frontend should be fully functional for the listed endpoints, but it must
+not fabricate functionality absent from the server:
+
+  - No registration or user/role/permission management API.
+  - No sales, POS, customer, prescription, barcode, payment, invoice, expense,
+    report, multi-branch, or notification API.
+  - No supplier-payment endpoints yet.
+  - No category delete, no manufacturer update/delete/get-one.
+  - Medicine and supplier details are summary DTOs, so edits cannot prefill all
+    submitted fields reliably.
+  - Purchase detail is also summary-only; order line display/edit is not yet
+    possible from a GET endpoint.
+  - Dashboard lowStockMedicines is currently always 0; use inventory low-stock.
+  - No endpoint exposes the logged-in user's permission set. Role-based UI
+    gating is only a convenience; 403 is authoritative.
+  - CORS needs the device/frontend origin configured on the backend through
+    CORS_ALLOWED_ORIGINS. Native mobile requests are generally not browser CORS
+    constrained, but web/Expo builds are.
+
+Use this contract as the frontend source of truth. If a desired screen needs a
+field or endpoint marked unavailable above, request that exact backend addition
+instead of guessing a route or altering the client to bypass the server.

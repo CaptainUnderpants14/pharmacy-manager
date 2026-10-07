@@ -1,0 +1,1 @@
+package demo.pharma.supplier; import org.springframework.data.jpa.repository.*; import java.util.*; public interface SupplierRepository extends JpaRepository<Supplier,UUID>,JpaSpecificationExecutor<Supplier>{boolean existsBySupplierCodeIgnoreCase(String supplierCode);}
