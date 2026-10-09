@@ -1,0 +1,4 @@
+package demo.pharma.payment;
+import demo.pharma.common.entity.BaseEntity; import demo.pharma.security.AppUser; import demo.pharma.supplier.Supplier; import jakarta.persistence.*; import lombok.*; import java.math.*; import java.time.*;
+@Entity @Table(name="supplier_payments",indexes=@Index(name="idx_supplier_payment_invoice",columnList="purchase_invoice_id")) @Getter @Setter @NoArgsConstructor
+public class SupplierPayment extends BaseEntity { @ManyToOne(optional=false) private Supplier supplier; @ManyToOne(optional=false) private PurchaseInvoice purchaseInvoice; @Column(nullable=false,precision=14,scale=2) private BigDecimal amount; @Enumerated(EnumType.STRING) @Column(nullable=false) private PaymentMethod paymentMethod; private String referenceNumber; @Column(nullable=false) private LocalDate paymentDate; @Column(length=1000) private String notes; @ManyToOne private AppUser createdBy; }

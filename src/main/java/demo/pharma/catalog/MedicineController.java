@@ -36,6 +36,7 @@ public class MedicineController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('MEDICINE_VIEW')")
+    @Transactional(readOnly = true)
     public PageResponse<View> list(@RequestParam(required = false) String search,
             @RequestParam(required = false) RecordStatus status, @RequestParam(required = false) UUID categoryId,
             @PageableDefault(size = 20, sort = "name") Pageable page) {
@@ -54,6 +55,7 @@ public class MedicineController {
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('MEDICINE_VIEW')")
+    @Transactional(readOnly = true)
     public View get(@PathVariable UUID id) {
         return view(find(id));
     }

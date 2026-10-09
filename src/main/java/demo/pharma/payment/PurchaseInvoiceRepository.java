@@ -1,0 +1,1 @@
+package demo.pharma.payment; import org.springframework.data.jpa.repository.*; import java.util.*; public interface PurchaseInvoiceRepository extends JpaRepository<PurchaseInvoice,UUID>,JpaSpecificationExecutor<PurchaseInvoice>{ boolean existsByInvoiceNumberIgnoreCase(String invoiceNumber); long countByPaymentStatusNot(PaymentStatus status); }

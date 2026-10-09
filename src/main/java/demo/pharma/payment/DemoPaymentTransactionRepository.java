@@ -1,0 +1,1 @@
+package demo.pharma.payment; import org.springframework.data.jpa.repository.JpaRepository; import java.util.*; public interface DemoPaymentTransactionRepository extends JpaRepository<DemoPaymentTransaction,UUID>{}

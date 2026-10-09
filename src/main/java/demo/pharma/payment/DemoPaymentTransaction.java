@@ -1,0 +1,4 @@
+package demo.pharma.payment;
+import demo.pharma.common.entity.BaseEntity; import demo.pharma.security.AppUser; import jakarta.persistence.*; import lombok.*; import java.math.*; import java.util.*;
+@Entity @Table(name="demo_payment_transactions",indexes=@Index(name="idx_demo_payment_reference",columnList="reference_type,reference_id")) @Getter @Setter @NoArgsConstructor
+public class DemoPaymentTransaction extends BaseEntity { @Column(nullable=false,length=80) private String referenceType; private UUID referenceId; @Column(nullable=false,precision=14,scale=2) private BigDecimal amount; @Enumerated(EnumType.STRING) @Column(nullable=false) private PaymentMethod paymentMethod; @Enumerated(EnumType.STRING) @Column(nullable=false) private DemoPaymentStatus status=DemoPaymentStatus.APPROVED; @Column(nullable=false,unique=true,length=120) private String terminalReference; @Column(length=1000) private String notes; @ManyToOne private AppUser createdBy; }

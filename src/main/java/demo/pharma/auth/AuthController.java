@@ -37,7 +37,7 @@ public class AuthController {
     record LoginRequest(@NotBlank String username, @NotBlank String password) {
     }
 
-    record UserView(UUID id, String username, String employeeId, List<String> roles) {
+    record UserView(UUID id, String username, String employeeId, List<String> roles, List<String> permissions) {
     }
 
     record LoginResponse(String token, String tokenType, long expiresIn, UserView user) {
@@ -68,6 +68,7 @@ public class AuthController {
 
     private UserView view(AppUser u) {
         return new UserView(u.getId(), u.getUsername(), null,
-                u.getRoles().stream().map(Role::getName).sorted().toList());
+                u.getRoles().stream().map(Role::getName).sorted().toList(),
+                u.getRoles().stream().flatMap(role -> role.getPermissions().stream()).map(p -> p.getCode()).distinct().sorted().toList());
     }
 }

@@ -16,7 +16,13 @@ public class SecuritySeedData {
             "MEDICINE_CREATE", "MEDICINE_UPDATE", "MEDICINE_DELETE", "BATCH_VIEW", "BATCH_CREATE", "BATCH_UPDATE",
             "STOCK_VIEW", "STOCK_ADJUST", "SUPPLIER_VIEW", "SUPPLIER_CREATE", "SUPPLIER_UPDATE", "PURCHASE_VIEW",
             "PURCHASE_CREATE", "PURCHASE_UPDATE", "PURCHASE_APPROVE", "PURCHASE_RECEIVE", "PURCHASE_CANCEL",
-            "PAYMENT_VIEW", "PAYMENT_CREATE", "REPORT_VIEW", "DASHBOARD_VIEW", "AUDIT_LOG_VIEW", "SETTINGS_MANAGE");
+            "PAYMENT_VIEW", "PAYMENT_CREATE", "REPORT_VIEW", "DASHBOARD_VIEW", "AUDIT_LOG_VIEW", "SETTINGS_MANAGE",
+            "SALE_VIEW", "SALE_CREATE", "SALE_UPDATE", "SALE_CANCEL",
+            "CUSTOMER_VIEW", "CUSTOMER_CREATE", "CUSTOMER_UPDATE", "CUSTOMER_DELETE",
+            "PRESCRIPTION_VIEW", "PRESCRIPTION_CREATE", "PRESCRIPTION_UPDATE", "PRESCRIPTION_DELETE",
+            "SALE_RETURN_VIEW", "SALE_RETURN_CREATE", "PURCHASE_RETURN_VIEW", "PURCHASE_RETURN_CREATE",
+            "EXPENSE_VIEW", "EXPENSE_CREATE", "EXPENSE_UPDATE", "EXPENSE_DELETE",
+            "BRANCH_VIEW", "BRANCH_MANAGE", "NOTIFICATION_VIEW");
 
     @Bean
     CommandLineRunner seed(RoleRepository roles, PermissionRepository permissions, UserRepository users,
@@ -30,7 +36,7 @@ public class SecuritySeedData {
             for (String n : List.of("OWNER", "ADMIN", "PHARMACIST", "CASHIER", "INVENTORY_MANAGER", "ACCOUNTANT",
                     "STAFF")) {
                 Role role = roles.findByName(n).orElseGet(() -> roles.save(new Role(n)));
-                if (n.equals("OWNER") && role.getPermissions().isEmpty()) {
+                if ((n.equals("OWNER") || n.equals("ADMIN")) && role.getPermissions().isEmpty()) {
                     role.setPermissions(all);
                     roles.save(role);
                 }

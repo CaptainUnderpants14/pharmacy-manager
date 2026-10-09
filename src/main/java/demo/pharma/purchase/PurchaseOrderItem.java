@@ -24,6 +24,8 @@ public class PurchaseOrderItem extends BaseEntity {
     private Medicine medicine;
     @Column(nullable = false, precision = 14, scale = 3)
     private BigDecimal quantity;
+    @Column(nullable = false, precision = 14, scale = 3)
+    private BigDecimal receivedQuantity = BigDecimal.ZERO;
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal unitPrice;
     @Column(precision = 14, scale = 2)

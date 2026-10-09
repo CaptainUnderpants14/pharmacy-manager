@@ -2,6 +2,7 @@ package demo.pharma.employee;
 
 import demo.pharma.common.exception.*;
 import demo.pharma.common.web.PageResponse;
+import demo.pharma.audit.AuditService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.*;
@@ -18,13 +19,14 @@ import java.util.*;
 @RequiredArgsConstructor
 public class EmployeeController {
     private final EmployeeRepository repo;
+    private final AuditService audit;
 
     record Request(@NotBlank String employeeCode, @NotBlank String firstName, @NotBlank String lastName, String phone,
             @Email String email, String address, String designation, LocalDate joiningDate,
             @PositiveOrZero BigDecimal salary, EmployeeStatus status, String branch) {
     }
 
-    record View(UUID id, String employeeCode, String firstName, String lastName, String phone, String designation,
+    record View(UUID id, String employeeCode, String firstName, String lastName, String phone, String email, String address, String designation, LocalDate joiningDate, BigDecimal salary, String branch,
             EmployeeStatus status) {
     }
 
@@ -50,7 +52,7 @@ public class EmployeeController {
             throw new BusinessException("Employee code already exists");
         Employee e = new Employee();
         a(e, r);
-        return v(repo.save(e));
+        repo.save(e); audit.logCurrent("EMPLOYEE_CREATED", "EMPLOYEE", e.getId(), null, e.getEmployeeCode()); return v(e);
     }
 
     @GetMapping("/{id}")
@@ -64,7 +66,7 @@ public class EmployeeController {
     View update(@PathVariable UUID id, @Valid @RequestBody Request r) {
         Employee e = f(id);
         a(e, r);
-        return v(repo.save(e));
+        repo.save(e); audit.logCurrent("EMPLOYEE_UPDATED", "EMPLOYEE", id, null, e.getEmployeeCode()); return v(e);
     }
 
     @PatchMapping("/{id}/status")
@@ -72,7 +74,7 @@ public class EmployeeController {
     View status(@PathVariable UUID id, @RequestParam EmployeeStatus status) {
         Employee e = f(id);
         e.setStatus(status);
-        return v(repo.save(e));
+        repo.save(e); audit.logCurrent("EMPLOYEE_STATUS_CHANGED", "EMPLOYEE", id, null, status.name()); return v(e);
     }
 
     @DeleteMapping("/{id}")
@@ -81,6 +83,7 @@ public class EmployeeController {
         Employee e = f(id);
         e.setStatus(EmployeeStatus.INACTIVE);
         repo.save(e);
+        audit.logCurrent("EMPLOYEE_DEACTIVATED", "EMPLOYEE", id, null, null);
     }
 
     private Employee f(UUID id) {
@@ -102,7 +105,7 @@ public class EmployeeController {
     }
 
     private View v(Employee e) {
-        return new View(e.getId(), e.getEmployeeCode(), e.getFirstName(), e.getLastName(), e.getPhone(),
-                e.getDesignation(), e.getStatus());
+        return new View(e.getId(), e.getEmployeeCode(), e.getFirstName(), e.getLastName(), e.getPhone(), e.getEmail(), e.getAddress(),
+                e.getDesignation(), e.getJoiningDate(), e.getSalary(), e.getBranch(), e.getStatus());
     }
 }
